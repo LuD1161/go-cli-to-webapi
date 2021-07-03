@@ -3,13 +3,13 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/http"
 
 	"github.com/gorilla/mux"
 	"github.com/jinzhu/gorm"
 	_ "github.com/jinzhu/gorm/dialects/postgres"
 	uuid "github.com/satori/go.uuid"
+	log "github.com/sirupsen/logrus"
 )
 
 var db *gorm.DB
@@ -42,13 +42,15 @@ func init() {
 		log.Fatal(err)
 	}
 	db.AutoMigrate(&Job{})
+	log.SetFormatter(&log.JSONFormatter{})
+	log.Info("Database Initialized")
 }
 
 func StatusUpdater(output chan Job) {
 	for {
 		select {
 		case job := <-output:
-			fmt.Println(job)
+			log.Info("Job Completed %v", job.JobId)
 			db.Model(&job).Updates(&job)
 		}
 	}
@@ -69,15 +71,18 @@ func getJob(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	job_id := vars["job_id"]
 	var job Job
+
 	// basic validation for UUID job_id
 	if _, err := uuid.FromString(job_id); err != nil {
 		sendErrorResponse(w, "Invalid job id "+job_id, err)
 		return
 	}
+
 	if result := db.Where("job_id = ?", job_id).First(&job); result.Error != nil {
 		sendErrorResponse(w, "Error retrieving job with "+job_id, result.Error)
 		return
 	}
+
 	json.NewEncoder(w).Encode(job)
 }
 
@@ -85,20 +90,37 @@ func createJob(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	var job Job
 	_ = json.NewDecoder(r.Body).Decode(&job)
+
 	if result := db.Save(&job); result.Error != nil {
 		sendErrorResponse(w, fmt.Sprintf("Error creating job  %+v", job), err)
 		return
 	}
+
 	// start a worker for this
 	go Worker(job, output)
+
 	if err != nil {
 		sendErrorResponse(w, fmt.Sprintf("Error creating job  %+v", job), err)
 	}
+
 	json.NewEncoder(w).Encode(job.JobId)
+}
+
+// LoggingMiddleware - adds middleware around endpoints
+func LoggingMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		log.WithFields(
+			log.Fields{
+				"Method": r.Method,
+				"Path":   r.URL.Path,
+			}).Info("Handled request")
+		next.ServeHTTP(w, r)
+	})
 }
 
 func main() {
 	r := mux.NewRouter()
+	r.Use(LoggingMiddleware)
 	r.HandleFunc("/job", getJobs).Methods("GET")
 	r.HandleFunc("/job/{job_id}", getJob).Methods("GET")
 	r.HandleFunc("/job", createJob).Methods("POST")
