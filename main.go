@@ -14,17 +14,19 @@ import (
 
 var db *gorm.DB
 var err error
+var output chan Job
 
-type job struct {
+type Job struct {
 	gorm.Model
-	Application string    `json:"application"`
-	Status      string    `json:"status"`
-	Worker      string    `json:"worker"`
-	JobId       uuid.UUID `gorm:"type:uuid" json:"job_id"`
+	CMDString string    `json:"cmd_string"`
+	Status    int       `json:"status"`
+	Worker    string    `json:"worker"`
+	JobId     uuid.UUID `gorm:"type:uuid" json:"job_id"`
+	Output    string    `json:"output"` // save job_output_file
 }
 
 // BeforeCreate will set a UUID in the job_id column
-func (job *job) BeforeCreate(scope *gorm.Scope) error {
+func (job *Job) BeforeCreate(scope *gorm.Scope) error {
 	uuid := uuid.NewV4()
 	return scope.SetColumn("job_id", uuid)
 }
@@ -39,12 +41,22 @@ func init() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	db.AutoMigrate(&job{})
+	db.AutoMigrate(&Job{})
+}
+
+func StatusUpdater(output chan Job) {
+	for {
+		select {
+		case job := <-output:
+			fmt.Println(job)
+			db.Model(&job).Updates(&job)
+		}
+	}
 }
 
 func getJobs(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	var jobs []job
+	var jobs []Job
 	if result := db.Find(&jobs); result.Error != nil {
 		sendErrorResponse(w, "Error retrieving jobs", err)
 		return
@@ -56,7 +68,7 @@ func getJob(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	vars := mux.Vars(r)
 	job_id := vars["job_id"]
-	var job job
+	var job Job
 	// basic validation for UUID job_id
 	if _, err := uuid.FromString(job_id); err != nil {
 		sendErrorResponse(w, "Invalid job id "+job_id, err)
@@ -71,13 +83,17 @@ func getJob(w http.ResponseWriter, r *http.Request) {
 
 func createJob(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	var job job
+	var job Job
 	_ = json.NewDecoder(r.Body).Decode(&job)
 	if result := db.Save(&job); result.Error != nil {
 		sendErrorResponse(w, fmt.Sprintf("Error creating job  %+v", job), err)
 		return
 	}
-	json.NewEncoder(w).Encode(job)
+	go Worker(job, output)
+	if err != nil {
+		sendErrorResponse(w, fmt.Sprintf("Error creating job  %+v", job), err)
+	}
+	json.NewEncoder(w).Encode(job.JobId)
 }
 
 func main() {
@@ -85,6 +101,10 @@ func main() {
 	r.HandleFunc("/job", getJobs).Methods("GET")
 	r.HandleFunc("/job/{job_id}", getJob).Methods("GET")
 	r.HandleFunc("/job", createJob).Methods("POST")
+
+	output = make(chan Job, 100)
+	// Create a status updater function
+	go StatusUpdater(output)
 
 	log.Fatal(http.ListenAndServe(":8000", r))
 }
