@@ -17,12 +17,12 @@ var err error
 var output chan Job
 
 type Job struct {
-	gorm.Model
-	CMDString string    `json:"cmd_string"`
-	Status    int       `json:"status"`
-	Worker    string    `json:"worker"`
-	JobId     uuid.UUID `gorm:"type:uuid" json:"job_id"`
-	Output    string    `json:"output"` // save job_output_file
+	gorm.Model `json:"-"`
+	CMDString  string    `json:"cmd_string"`
+	Status     int       `json:"status"`
+	Worker     string    `json:"worker"`
+	JobId      uuid.UUID `gorm:"type:uuid" json:"job_id"`
+	Output     string    `json:"output"` // save job_output_file
 }
 
 // BeforeCreate will set a UUID in the job_id column
@@ -89,6 +89,7 @@ func createJob(w http.ResponseWriter, r *http.Request) {
 		sendErrorResponse(w, fmt.Sprintf("Error creating job  %+v", job), err)
 		return
 	}
+	// start a worker for this
 	go Worker(job, output)
 	if err != nil {
 		sendErrorResponse(w, fmt.Sprintf("Error creating job  %+v", job), err)

@@ -2,7 +2,6 @@ package main
 
 import (
 	b64 "encoding/base64"
-	"fmt"
 	"log"
 	"os/exec"
 )
@@ -19,7 +18,6 @@ func New(cmdString string) (CommandResponse, error) {
 		log.Fatal(err)
 		return CommandResponse{Status: 1, Output: ""}, err
 	}
-	fmt.Printf("%s\n", stdoutStderr)
 	return CommandResponse{Status: 0, Output: b64.StdEncoding.EncodeToString(stdoutStderr)}, nil
 }
 
