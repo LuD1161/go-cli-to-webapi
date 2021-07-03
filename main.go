@@ -47,6 +47,7 @@ func getJobs(w http.ResponseWriter, r *http.Request) {
 	var jobs []job
 	if result := db.Find(&jobs); result.Error != nil {
 		sendErrorResponse(w, "Error retrieving jobs", err)
+		return
 	}
 	json.NewEncoder(w).Encode(jobs)
 }
@@ -57,14 +58,13 @@ func getJob(w http.ResponseWriter, r *http.Request) {
 	job_id := vars["job_id"]
 	var job job
 	// basic validation for UUID job_id
-	uid, err := uuid.FromString(job_id)
-	fmt.Println(uid)
-	fmt.Println(err)
 	if _, err := uuid.FromString(job_id); err != nil {
 		sendErrorResponse(w, "Invalid job id "+job_id, err)
+		return
 	}
-	if result := db.Where("job_id = ?", uid).First(&job); result.Error != nil {
+	if result := db.Where("job_id = ?", job_id).First(&job); result.Error != nil {
 		sendErrorResponse(w, "Error retrieving job with "+job_id, result.Error)
+		return
 	}
 	json.NewEncoder(w).Encode(job)
 }
@@ -75,6 +75,7 @@ func createJob(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewDecoder(r.Body).Decode(&job)
 	if result := db.Save(&job); result.Error != nil {
 		sendErrorResponse(w, fmt.Sprintf("Error creating job  %+v", job), err)
+		return
 	}
 	json.NewEncoder(w).Encode(job)
 }
