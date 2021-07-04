@@ -12,7 +12,7 @@ type CommandResponse struct {
 }
 
 func New(cmdString string) (CommandResponse, error) {
-	cmd := exec.Command("bash", "-c", cmdString)
+	cmd := exec.Command("/bin/sh", "-c", cmdString)
 	stdoutStderr, err := cmd.CombinedOutput()
 	if err != nil {
 		log.Fatal(err)
