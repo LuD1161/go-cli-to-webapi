@@ -60,7 +60,7 @@ func StatusUpdater(output chan Job) {
 	for {
 		select {
 		case job := <-output:
-			log.Info("Job Completed %v", job.JobId)
+			log.Info("Job Completed : ", job.JobId)
 			db.Model(&job).Updates(&job)
 		}
 	}
@@ -128,9 +128,15 @@ func LoggingMiddleware(next http.Handler) http.Handler {
 	})
 }
 
+func health_check(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]int{"ok": 1})
+}
+
 func main() {
 	r := mux.NewRouter()
 	r.Use(LoggingMiddleware)
+	r.HandleFunc("/health_check", health_check).Methods("GET")
 	r.HandleFunc("/job", getJobs).Methods("GET")
 	r.HandleFunc("/job/{job_id}", getJob).Methods("GET")
 	r.HandleFunc("/job", createJob).Methods("POST")

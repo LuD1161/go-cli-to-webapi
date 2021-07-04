@@ -1,0 +1,39 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cli2web-api
+spec:
+  replicas: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      name: cli2web-api
+  template:
+    metadata:
+      labels:
+        name: cli2web-api
+    spec:
+      containers:
+      - name: application
+        image: "zutu121/go-cli-to-webapi:latest"
+        imagePullPolicy: Always
+        ports:
+          - containerPort: 8000
+        env:
+          - name: DB_PORT
+            value: "5432"
+          - name: DB_HOST
+            value: postgres-db-lb
+          - name: DB_PASSWORD
+            value: testpassword
+          - name: DB_TABLE
+            value: postgres
+          - name: DB_USERNAME
+            value: postgres
+          - name: SSL_MODE
+            value: disable
