@@ -1,10 +1,14 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/gorilla/mux"
 	"github.com/jinzhu/gorm"
@@ -16,6 +20,10 @@ import (
 var db *gorm.DB
 var err error
 var output chan Job
+
+const (
+	APP_PORT = "8000"
+)
 
 type Job struct {
 	gorm.Model `json:"-"`
@@ -144,8 +152,22 @@ func main() {
 	output = make(chan Job, 100)
 	// Create a status updater function
 	go StatusUpdater(output)
+	srv := &http.Server{
+		Handler:      r,
+		Addr:         ":" + APP_PORT,
+		ReadTimeout:  10 * time.Second,
+		WriteTimeout: 10 * time.Second,
+	}
+	// Start Server
+	go func() {
+		log.Println("Starting Server")
+		if err := srv.ListenAndServe(); err != nil {
+			log.Fatal(err)
+		}
+	}()
 
-	log.Fatal(http.ListenAndServe(":8000", r))
+	// Graceful Shutdown
+	waitForShutdown(srv)
 }
 
 func sendErrorResponse(w http.ResponseWriter, message string, err error) {
@@ -153,4 +175,20 @@ func sendErrorResponse(w http.ResponseWriter, message string, err error) {
 	if err := json.NewEncoder(w).Encode(Response{Message: message, Error: err.Error()}); err != nil {
 		panic(err)
 	}
+}
+
+func waitForShutdown(srv *http.Server) {
+	interruptChan := make(chan os.Signal, 1)
+	signal.Notify(interruptChan, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
+
+	// Block until we receive our signal.
+	<-interruptChan
+
+	// Create a deadline to wait for.
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
+	defer cancel()
+	srv.Shutdown(ctx)
+
+	log.Println("Shutting down")
+	os.Exit(0)
 }
