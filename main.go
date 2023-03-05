@@ -13,6 +13,7 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/jinzhu/gorm"
 	_ "github.com/jinzhu/gorm/dialects/postgres"
+	"github.com/joho/godotenv"
 	uuid "github.com/satori/go.uuid"
 	log "github.com/sirupsen/logrus"
 )
@@ -46,15 +47,24 @@ type Response struct {
 }
 
 func init() {
+	if os.Getenv("ENV") != "PROD" {
+		envFile := ".env"
+		log.Info("loading env file : %s", envFile)
+		err := godotenv.Load(envFile)
+		if err != nil && !os.IsNotExist(err) {
+			log.Error("Error loading .env file")
+		}
+	}
 	log.Info("Setting up new database!!!")
 	dbUsername := os.Getenv("DB_USERNAME")
 	dbPassword := os.Getenv("DB_PASSWORD")
+	dbName := os.Getenv("DB_NAME")
 	dbHost := os.Getenv("DB_HOST")
-	dbTable := os.Getenv("DB_TABLE")
 	dbPort := os.Getenv("DB_PORT")
 	sslMode := os.Getenv("SSL_MODE")
 
-	connectString := fmt.Sprintf("host=%s port=%s user=%s dbname=%s password=%s sslmode=%s", dbHost, dbPort, dbUsername, dbTable, dbPassword, sslMode)
+	connectString := fmt.Sprintf("host=%s port=%s user=%s dbname=%s password=%s sslmode=%s", dbHost, dbPort, dbUsername, dbName, dbPassword, sslMode)
+	log.Info(connectString)
 	db, err = gorm.Open("postgres", connectString)
 	if err != nil {
 		log.Fatal(err)
