@@ -1,4 +1,4 @@
 #!/bin/bash
 
-rm -f goCLIWebAPI.zip && zip goCLIWebAPI.zip main subfinder && cp goCLIWebAPI.zip /Users/aseemshrey/Desktop/
+rm -f goCLIWebAPI.zip && zip goCLIWebAPI.zip main subfinder
 echo "Created goCLIWebAPI.zip successfully"

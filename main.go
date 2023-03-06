@@ -171,14 +171,6 @@ func main() {
 	lambda.Start(adapter.ProxyWithContext)
 }
 
-// func main() {
-// 	if os.Getenv("_LAMBDA_SERVER_PORT") == "" {
-// 		HandleRequest()
-// 	} else {
-// 		lambda.Start(HandleRequest)
-// 	}
-// }
-
 func sendErrorResponse(w http.ResponseWriter, message string, err error) {
 	w.WriteHeader(http.StatusInternalServerError)
 	if err := json.NewEncoder(w).Encode(Response{Message: message, Error: err.Error()}); err != nil {

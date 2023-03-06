@@ -10,6 +10,7 @@ build-and-execute:
 deploy:
 	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "-X main.GitCommit=${GIT_COMMIT}" -o main *.go
 	chmod +x create_zip.sh && ./create_zip.sh
+	aws lambda --profile=harsh --region=us-east-2 update-function-code --function-name  arn:aws:lambda:us-east-2:624830854122:function:goCLIWebAPI --zip-file fileb:///Users/aseemshrey/Repos/Personal/go-cli-to-webapi/goCLIWebAPI.zip
 
 .PHONY: run
 run:
