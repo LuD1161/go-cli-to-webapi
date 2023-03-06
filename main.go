@@ -1,18 +1,18 @@
 package main
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
-	"os/signal"
-	"syscall"
-	"time"
+	"sync"
 
+	"github.com/aws/aws-lambda-go/lambda"
+	"github.com/awslabs/aws-lambda-go-api-proxy/gorillamux"
 	"github.com/gorilla/mux"
 	"github.com/jinzhu/gorm"
 	_ "github.com/jinzhu/gorm/dialects/postgres"
+	"github.com/joho/godotenv"
 	uuid "github.com/satori/go.uuid"
 	log "github.com/sirupsen/logrus"
 )
@@ -20,10 +20,6 @@ import (
 var db *gorm.DB
 var err error
 var output chan Job
-
-const (
-	APP_PORT = "8000"
-)
 
 type Job struct {
 	gorm.Model `json:"-"`
@@ -46,15 +42,24 @@ type Response struct {
 }
 
 func init() {
+	if os.Getenv("ENV") != "PROD" {
+		envFile := ".env"
+		log.Info("loading env file : %s", envFile)
+		err := godotenv.Load(envFile)
+		if err != nil && !os.IsNotExist(err) {
+			log.Error("Error loading .env file")
+		}
+	}
 	log.Info("Setting up new database!!!")
 	dbUsername := os.Getenv("DB_USERNAME")
 	dbPassword := os.Getenv("DB_PASSWORD")
+	dbName := os.Getenv("DB_NAME")
 	dbHost := os.Getenv("DB_HOST")
-	dbTable := os.Getenv("DB_TABLE")
 	dbPort := os.Getenv("DB_PORT")
 	sslMode := os.Getenv("SSL_MODE")
 
-	connectString := fmt.Sprintf("host=%s port=%s user=%s dbname=%s password=%s sslmode=%s", dbHost, dbPort, dbUsername, dbTable, dbPassword, sslMode)
+	connectString := fmt.Sprintf("host=%s port=%s user=%s dbname=%s password=%s sslmode=%s", dbHost, dbPort, dbUsername, dbName, dbPassword, sslMode)
+	log.Info(connectString)
 	db, err = gorm.Open("postgres", connectString)
 	if err != nil {
 		log.Fatal(err)
@@ -115,13 +120,19 @@ func createJob(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// start a worker for this
-	go Worker(job, output)
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		Worker(job, output)
+	}()
 
 	if err != nil {
 		sendErrorResponse(w, fmt.Sprintf("Error creating job  %+v", job), err)
 	}
 
 	json.NewEncoder(w).Encode(job.JobId)
+	wg.Wait()
 }
 
 // LoggingMiddleware - adds middleware around endpoints
@@ -143,6 +154,10 @@ func health_check(w http.ResponseWriter, r *http.Request) {
 
 func main() {
 	r := mux.NewRouter()
+	r.NotFoundHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		log.Println("Not found", r.RequestURI)
+		http.Error(w, fmt.Sprintf("Not found: %s", r.RequestURI), http.StatusNotFound)
+	})
 	r.Use(LoggingMiddleware)
 	r.HandleFunc("/health_check", health_check).Methods("GET")
 	r.HandleFunc("/job", getJobs).Methods("GET")
@@ -152,22 +167,8 @@ func main() {
 	output = make(chan Job, 100)
 	// Create a status updater function
 	go StatusUpdater(output)
-	srv := &http.Server{
-		Handler:      r,
-		Addr:         ":" + APP_PORT,
-		ReadTimeout:  10 * time.Second,
-		WriteTimeout: 10 * time.Second,
-	}
-	// Start Server
-	go func() {
-		log.Println("Starting Server")
-		if err := srv.ListenAndServe(); err != nil {
-			log.Fatal(err)
-		}
-	}()
-
-	// Graceful Shutdown
-	waitForShutdown(srv)
+	adapter := gorillamux.NewV2(r)
+	lambda.Start(adapter.ProxyWithContext)
 }
 
 func sendErrorResponse(w http.ResponseWriter, message string, err error) {
@@ -175,20 +176,4 @@ func sendErrorResponse(w http.ResponseWriter, message string, err error) {
 	if err := json.NewEncoder(w).Encode(Response{Message: message, Error: err.Error()}); err != nil {
 		panic(err)
 	}
-}
-
-func waitForShutdown(srv *http.Server) {
-	interruptChan := make(chan os.Signal, 1)
-	signal.Notify(interruptChan, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
-
-	// Block until we receive our signal.
-	<-interruptChan
-
-	// Create a deadline to wait for.
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
-	defer cancel()
-	srv.Shutdown(ctx)
-
-	log.Println("Shutting down")
-	os.Exit(0)
 }
