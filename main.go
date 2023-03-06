@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"sync"
 
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/awslabs/aws-lambda-go-api-proxy/gorillamux"
@@ -119,13 +120,19 @@ func createJob(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// start a worker for this
-	go Worker(job, output)
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		Worker(job, output)
+	}()
 
 	if err != nil {
 		sendErrorResponse(w, fmt.Sprintf("Error creating job  %+v", job), err)
 	}
 
 	json.NewEncoder(w).Encode(job.JobId)
+	wg.Wait()
 }
 
 // LoggingMiddleware - adds middleware around endpoints
@@ -145,7 +152,7 @@ func health_check(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]int{"ok": 1})
 }
 
-func HandleRequest() {
+func main() {
 	r := mux.NewRouter()
 	r.NotFoundHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		log.Println("Not found", r.RequestURI)
@@ -162,16 +169,15 @@ func HandleRequest() {
 	go StatusUpdater(output)
 	adapter := gorillamux.NewV2(r)
 	lambda.Start(adapter.ProxyWithContext)
-
 }
 
-func main() {
-	if os.Getenv("_LAMBDA_SERVER_PORT") == "" {
-		HandleRequest()
-	} else {
-		lambda.Start(HandleRequest)
-	}
-}
+// func main() {
+// 	if os.Getenv("_LAMBDA_SERVER_PORT") == "" {
+// 		HandleRequest()
+// 	} else {
+// 		lambda.Start(HandleRequest)
+// 	}
+// }
 
 func sendErrorResponse(w http.ResponseWriter, message string, err error) {
 	w.WriteHeader(http.StatusInternalServerError)
